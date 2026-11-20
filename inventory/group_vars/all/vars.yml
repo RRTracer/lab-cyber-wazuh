@@ -1,0 +1,10 @@
+---
+lab_name: wazuh-ansible-lab
+
+wazuh_manager_ip: 192.168.56.10
+
+wazuh_agent_group: default
+
+wazuh_dashboard_port: 443
+
+ansible_python_interpreter: auto_silent

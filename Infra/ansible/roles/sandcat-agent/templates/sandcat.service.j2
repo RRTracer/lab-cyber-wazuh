@@ -1,0 +1,20 @@
+[Unit]
+Description=MITRE Caldera Sandcat Agent
+Documentation=https://caldera.readthedocs.io/
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+
+# Sandcat needs root to exercise the full range of abilities in the lab
+User=root
+Group=root
+
+ExecStart={{ sandcat_binary_path }} -server {{ sandcat_server_url }} -group {{ sandcat_group }} -v
+
+Restart=always
+RestartSec=15
+
+[Install]
+WantedBy=multi-user.target

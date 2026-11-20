@@ -1,0 +1,48 @@
+---
+- name: Verify operating system
+  ansible.builtin.assert:
+    that:
+      - ansible_distribution == "Ubuntu"
+      - ansible_distribution_version == "22.04"
+    fail_msg: "Sandcat role requires Ubuntu Server 22.04."
+
+- name: Wait for Caldera server to be reachable
+  ansible.builtin.wait_for:
+    host: "{{ sandcat_server_host }}"
+    port: "{{ sandcat_server_port }}"
+    state: started
+    timeout: 120
+
+- name: Download Sandcat agent from Caldera
+  ansible.builtin.uri:
+    url: "{{ sandcat_server_url }}/file/download"
+    method: POST
+    headers:
+      file: "{{ sandcat_file }}"
+      platform: "{{ sandcat_platform }}"
+    dest: "{{ sandcat_binary_path }}"
+    status_code: 200
+    owner: root
+    group: root
+    mode: "0755"
+  register: sandcat_download
+  notify: Restart Sandcat
+
+- name: Install Sandcat systemd service
+  ansible.builtin.template:
+    src: sandcat.service.j2
+    dest: /etc/systemd/system/{{ sandcat_service_name }}.service
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Restart Sandcat
+
+- name: Apply pending service changes
+  ansible.builtin.meta: flush_handlers
+
+- name: Enable and start Sandcat
+  ansible.builtin.systemd_service:
+    name: "{{ sandcat_service_name }}"
+    enabled: "{{ sandcat_service_enabled }}"
+    state: started
+    daemon_reload: true

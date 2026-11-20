@@ -1,0 +1,7 @@
+---
+- name: Deploy MITRE Caldera Sandcat Agent
+  hosts: client-01
+  become: true
+
+  roles:
+    - sandcat-agent

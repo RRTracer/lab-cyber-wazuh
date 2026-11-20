@@ -1,0 +1,178 @@
+---
+- name: Verify operating system
+  ansible.builtin.assert:
+    that:
+      - ansible_distribution == "Ubuntu"
+      - ansible_distribution_version == "22.04"
+    fail_msg: "Caldera role requires Ubuntu Server 22.04."
+
+- name: Install system dependencies
+  ansible.builtin.apt:
+    name:
+      - git
+      - curl
+      - ca-certificates
+      - gnupg
+      - python3
+      - python3-venv
+      - python3-pip
+      - python3-dev
+      - build-essential
+      - libffi-dev
+      - libssl-dev
+    state: present
+    update_cache: true
+    cache_valid_time: 3600
+
+- name: Create APT keyrings directory
+  ansible.builtin.file:
+    path: /etc/apt/keyrings
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Download NodeSource signing key
+  ansible.builtin.get_url:
+    url: https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key
+    dest: /etc/apt/keyrings/nodesource.asc
+    owner: root
+    group: root
+    mode: "0644"
+
+- name: Configure NodeSource repository
+  ansible.builtin.apt_repository:
+    repo: >-
+      deb [signed-by=/etc/apt/keyrings/nodesource.asc]
+      https://deb.nodesource.com/node_{{ caldera_node_major }}.x nodistro main
+    filename: nodesource
+    state: present
+
+- name: Install Node.js
+  ansible.builtin.apt:
+    name: nodejs
+    state: present
+    update_cache: true
+
+- name: Create Caldera group
+  ansible.builtin.group:
+    name: "{{ caldera_group }}"
+    system: true
+    state: present
+
+- name: Create Caldera system user
+  ansible.builtin.user:
+    name: "{{ caldera_user }}"
+    group: "{{ caldera_group }}"
+    system: true
+    create_home: false
+    shell: /usr/sbin/nologin
+    state: present
+
+- name: Create Caldera installation directory
+  ansible.builtin.file:
+    path: "{{ caldera_install_dir }}"
+    state: directory
+    owner: "{{ caldera_user }}"
+    group: "{{ caldera_group }}"
+    mode: "0750"
+
+- name: Create Caldera data directory
+  ansible.builtin.file:
+    path: "{{ caldera_data_dir }}"
+    state: directory
+    owner: "{{ caldera_user }}"
+    group: "{{ caldera_group }}"
+    mode: "0750"
+
+- name: Create npm cache directory
+  ansible.builtin.file:
+    path: "{{ caldera_data_dir }}/.npm"
+    state: directory
+    owner: "{{ caldera_user }}"
+    group: "{{ caldera_group }}"
+    mode: "0750"
+
+- name: Clone Caldera repository
+  become_user: "{{ caldera_user }}"
+  ansible.builtin.git:
+    repo: "{{ caldera_repository }}"
+    dest: "{{ caldera_install_dir }}"
+    version: "{{ caldera_version }}"
+    recursive: true
+    update: true
+    force: false
+  register: caldera_git
+
+- name: Remove UI build marker after repository update
+  ansible.builtin.file:
+    path: "{{ caldera_data_dir }}/ui-built"
+    state: absent
+  when: caldera_git.changed
+
+- name: Create Python virtual environment
+  become_user: "{{ caldera_user }}"
+  ansible.builtin.command:
+    cmd: "python3 -m venv {{ caldera_venv_dir }}"
+    creates: "{{ caldera_venv_dir }}/bin/python"
+
+- name: Install Caldera Python requirements
+  become_user: "{{ caldera_user }}"
+  ansible.builtin.pip:
+    requirements: "{{ caldera_install_dir }}/requirements.txt"
+    virtualenv: "{{ caldera_venv_dir }}"
+    virtualenv_command: "python3 -m venv"
+  register: caldera_pip
+
+- name: Install Caldera startup script
+  ansible.builtin.template:
+    src: caldera-start.sh.j2
+    dest: /usr/local/bin/caldera-start
+    owner: root
+    group: root
+    mode: "0755"
+  notify: Restart Caldera
+
+- name: Install Caldera systemd service
+  ansible.builtin.template:
+    src: caldera.service.j2
+    dest: /etc/systemd/system/caldera.service
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Restart Caldera
+
+- name: Restart service when Python requirements change
+  ansible.builtin.systemd_service:
+    name: "{{ caldera_service_name }}"
+    state: restarted
+  when:
+    - caldera_pip.changed
+    - ansible_facts.services is defined
+    - "'caldera.service' in ansible_facts.services"
+
+- name: Enable and start Caldera
+  ansible.builtin.systemd_service:
+    name: "{{ caldera_service_name }}"
+    enabled: "{{ caldera_service_enabled }}"
+    state: started
+    daemon_reload: true
+
+- name: Apply pending service changes
+  ansible.builtin.meta: flush_handlers
+
+- name: Wait for Caldera HTTP port
+  ansible.builtin.wait_for:
+    host: 127.0.0.1
+    port: "{{ caldera_port }}"
+    state: started
+    delay: 5
+    timeout: 300
+
+- name: Mark Caldera UI as built
+  ansible.builtin.file:
+    path: "{{ caldera_data_dir }}/ui-built"
+    state: touch
+    owner: "{{ caldera_user }}"
+    group: "{{ caldera_group }}"
+    mode: "0640"

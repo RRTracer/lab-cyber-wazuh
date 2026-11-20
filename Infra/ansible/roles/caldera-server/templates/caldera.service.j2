@@ -1,0 +1,34 @@
+[Unit]
+Description=MITRE Caldera Server
+Documentation=https://caldera.readthedocs.io/
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+
+User={{ caldera_user }}
+Group={{ caldera_group }}
+
+WorkingDirectory={{ caldera_install_dir }}
+
+ExecStart=/usr/local/bin/caldera-start
+
+Restart=on-failure
+RestartSec=10
+TimeoutStartSec=300
+
+Environment=PYTHONUNBUFFERED=1
+# ProtectHome=true hides /home: keep HOME and the npm cache in the data dir
+Environment=HOME={{ caldera_data_dir }}
+Environment=npm_config_cache={{ caldera_data_dir }}/.npm
+
+UMask=0027
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=true
+ReadWritePaths={{ caldera_install_dir }} {{ caldera_data_dir }}
+
+[Install]
+WantedBy=multi-user.target

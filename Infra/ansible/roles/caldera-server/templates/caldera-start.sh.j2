@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+cd {{ caldera_install_dir }}
+
+if [[ ! -f {{ caldera_data_dir }}/ui-built ]]; then
+    exec {{ caldera_venv_dir }}/bin/python server.py --insecure --build
+fi
+
+exec {{ caldera_venv_dir }}/bin/python server.py --insecure

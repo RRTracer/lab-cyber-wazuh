@@ -1,0 +1,7 @@
+---
+- name: Deploy MITRE Caldera Server
+  hosts: caldera_server
+  become: true
+
+  roles:
+    - caldera-server

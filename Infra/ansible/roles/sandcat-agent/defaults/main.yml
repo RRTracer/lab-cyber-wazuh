@@ -1,0 +1,18 @@
+---
+# Caldera server the agent reports back to (C2)
+sandcat_server_host: "192.168.56.12"
+sandcat_server_port: 8888
+sandcat_server_url: "http://{{ sandcat_server_host }}:{{ sandcat_server_port }}"
+
+# Agent
+sandcat_group: "red"
+sandcat_platform: "linux"
+# "sandcat.go" = compiled Go agent served by Caldera's /file/download endpoint
+sandcat_file: "sandcat.go"
+
+# Binary / install
+sandcat_binary_path: "/usr/local/bin/sandcat"
+
+# Service
+sandcat_service_name: "sandcat"
+sandcat_service_enabled: true

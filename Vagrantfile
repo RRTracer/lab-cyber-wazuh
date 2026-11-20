@@ -11,8 +11,8 @@ Vagrant.configure("2") do |config|
       name: "wazuh",
       hostname: "wazuh-01",
       ip: "192.168.56.10",
-      cpus: 4,
-      memory: 8192
+      cpus: 2,
+      memory: 4096
     },
     {
       name: "client",
@@ -20,6 +20,13 @@ Vagrant.configure("2") do |config|
       ip: "192.168.56.11",
       cpus: 2,
       memory: 2048
+    },
+    {
+      name: "caldera",
+      hostname: "caldera-01",
+      ip: "192.168.56.12",
+      cpus: 2,
+      memory: 4096
     }
   ]
 

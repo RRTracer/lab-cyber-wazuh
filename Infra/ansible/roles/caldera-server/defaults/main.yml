@@ -1,0 +1,23 @@
+---
+# Caldera
+caldera_version: "5.3.0"
+caldera_repository: "https://github.com/mitre/caldera.git"
+
+# System
+caldera_user: "caldera"
+caldera_group: "caldera"
+
+# Directories
+caldera_install_dir: "/opt/caldera"
+caldera_venv_dir: "/opt/caldera/.venv"
+caldera_data_dir: "/var/lib/caldera"
+
+# Network
+caldera_port: 8888
+
+# Node.js
+caldera_node_major: "22"
+
+# Service
+caldera_service_name: "caldera"
+caldera_service_enabled: true

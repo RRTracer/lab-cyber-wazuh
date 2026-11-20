@@ -1,6 +1,15 @@
 ---
-- name: Configure common infrastructure
-  ansible.builtin.import_playbook: common.yml
+# - name: Configure common infrastructure
+#   ansible.builtin.import_playbook: common.yml
 
 - name: Deploy Wazuh server
   ansible.builtin.import_playbook: wazuh-server.yml
+
+- name: Deploy Wazuh agent
+  ansible.builtin.import_playbook: wazuh-agent.yml
+
+- name: Deploy caldera server
+  ansible.builtin.import_playbook: caldera-server.yml
+
+- name: Deploy sandcat agent
+  ansible.builtin.import_playbook: sandcat-agent.yml

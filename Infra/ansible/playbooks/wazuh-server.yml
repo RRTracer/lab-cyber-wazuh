@@ -1,0 +1,7 @@
+---
+- name: Deploy Wazuh Server
+  hosts: wazuh_server
+  become: true
+
+  roles:
+    - wazuh-server

@@ -1,0 +1,35 @@
+---
+- name: Retrieve Wazuh Manager version
+  hosts: wazuh_server
+  become: true
+  gather_facts: false
+
+  tasks:
+    - name: Read installed Wazuh Manager package version
+      ansible.builtin.command:
+        argv:
+          - dpkg-query
+          - -W
+          - "-f=${Version}"
+          - wazuh-manager
+      register: wazuh_manager_version_result
+      changed_when: false
+
+    - name: Store Wazuh Manager package version
+      ansible.builtin.set_fact:
+        wazuh_manager_package_version: "{{ wazuh_manager_version_result.stdout | trim }}"
+
+    - name: Display detected Manager version
+      ansible.builtin.debug:
+        msg: "Wazuh Manager version: {{ wazuh_manager_package_version }}"
+
+- name: Deploy Wazuh Agent
+  hosts: wazuh_agents
+  become: true
+
+  vars:
+    wazuh_manager_package_version: >-
+      {{ hostvars[groups['wazuh_server'][0]].wazuh_manager_package_version }}
+
+  roles:
+    - wazuh-agent

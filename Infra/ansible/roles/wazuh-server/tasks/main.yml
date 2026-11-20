@@ -1,0 +1,118 @@
+---
+- name: Verify operating system
+  ansible.builtin.assert:
+    that:
+      - ansible_distribution == "Ubuntu"
+      - ansible_distribution_version == "22.04"
+      - ansible_architecture == "x86_64"
+    fail_msg: "This role requires Ubuntu 22.04 x86_64."
+
+- name: Gather installed package information
+  ansible.builtin.package_facts:
+    manager: auto
+
+- name: Identify installed Wazuh components
+  ansible.builtin.set_fact:
+    wazuh_installed_packages: >-
+      {{
+        (ansible_facts.packages | default({})).keys()
+        | list
+        | intersect(wazuh_server_packages)
+      }}
+
+- name: Check installation state
+  ansible.builtin.assert:
+    that:
+      - >-
+        wazuh_installed_packages | length == 0 or
+        wazuh_installed_packages | length == 3
+    fail_msg: >
+      Partial Wazuh installation detected.
+      Manual recovery is required before running this role.
+
+- name: Install required dependencies
+  ansible.builtin.apt:
+    name:
+      - curl
+      - gnupg
+      - apt-transport-https
+      - ca-certificates
+    state: present
+    update_cache: true
+    cache_valid_time: 3600
+
+- name: Create installation directory
+  ansible.builtin.file:
+    path: "{{ wazuh_install_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0750"
+  when: wazuh_installed_packages | length == 0
+
+- name: Download Wazuh installation assistant
+  ansible.builtin.get_url:
+    url: "{{ wazuh_installer_url }}"
+    dest: "{{ wazuh_install_dir }}/wazuh-install.sh"
+    owner: root
+    group: root
+    mode: "0750"
+  when: wazuh_installed_packages | length == 0
+
+- name: Install Wazuh all-in-one
+  ansible.builtin.command:
+    argv:
+      - bash
+      - "{{ wazuh_install_dir }}/wazuh-install.sh"
+      - "-a"
+    chdir: "{{ wazuh_install_dir }}"
+  environment:
+    DEBIAN_FRONTEND: noninteractive
+  when: wazuh_installed_packages | length == 0
+  no_log: true
+
+- name: Enable and start Wazuh services
+  ansible.builtin.systemd:
+    name: "{{ item }}"
+    enabled: true
+    state: started
+    daemon_reload: true
+  loop: "{{ wazuh_server_services }}"
+
+- name: Wait for Wazuh Dashboard
+  ansible.builtin.wait_for:
+    host: 127.0.0.1
+    port: 443
+    state: started
+    delay: 10
+    timeout: 600
+
+- name: Create local artifacts directory
+  ansible.builtin.file:
+    path: "{{ playbook_dir }}/../artifacts"
+    state: directory
+    mode: "0700"
+  delegate_to: localhost
+  become: false
+
+- name: Check generated credentials archive
+  ansible.builtin.stat:
+    path: "{{ wazuh_install_dir }}/wazuh-install-files.tar"
+  register: wazuh_credentials_archive
+
+- name: Retrieve Wazuh credentials archive
+  ansible.builtin.fetch:
+    src: "{{ wazuh_install_dir }}/wazuh-install-files.tar"
+    dest: "{{ playbook_dir }}/../artifacts/wazuh-install-files.tar"
+    flat: true
+  when: wazuh_credentials_archive.stat.exists
+  no_log: true
+
+- name: Protect local credentials archive
+  ansible.builtin.file:
+    path: "{{ playbook_dir }}/../artifacts/wazuh-install-files.tar"
+    mode: "0600"
+    state: file
+  delegate_to: localhost
+  become: false
+  when: wazuh_credentials_archive.stat.exists

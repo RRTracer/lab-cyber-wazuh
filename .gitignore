@@ -14,3 +14,4 @@ vault.yml
 
 # OS
 .DS_Store
+artifacts/

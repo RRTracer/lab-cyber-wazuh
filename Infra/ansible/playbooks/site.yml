@@ -1,0 +1,6 @@
+---
+- name: Configure common infrastructure
+  ansible.builtin.import_playbook: common.yml
+
+- name: Deploy Wazuh server
+  ansible.builtin.import_playbook: wazuh-server.yml

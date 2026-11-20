@@ -1,0 +1,7 @@
+---
+- name: Configure common system requirements
+  hosts: all
+  become: true
+
+  roles:
+    - common

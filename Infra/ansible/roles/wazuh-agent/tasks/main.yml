@@ -1,0 +1,93 @@
+---
+- name: Verify operating system
+  ansible.builtin.assert:
+    that:
+      - ansible_distribution == "Ubuntu"
+      - ansible_distribution_version == "22.04"
+      - ansible_architecture == "x86_64"
+    fail_msg: "This role requires Ubuntu 22.04 x86_64."
+
+- name: Verify manager package version is available
+  ansible.builtin.assert:
+    that:
+      - wazuh_manager_package_version is defined
+      - wazuh_manager_package_version | length > 0
+    fail_msg: "Unable to retrieve Wazuh Manager package version."
+
+- name: Install repository dependencies
+  ansible.builtin.apt:
+    name:
+      - curl
+      - gnupg
+      - apt-transport-https
+      - ca-certificates
+    state: present
+    update_cache: true
+    cache_valid_time: 3600
+
+- name: Download Wazuh repository GPG key
+  ansible.builtin.get_url:
+    url: "{{ wazuh_agent_repository_key_url }}"
+    dest: "{{ wazuh_agent_repository_key_tmp }}"
+    mode: "0644"
+
+- name: Convert Wazuh GPG key to keyring format
+  ansible.builtin.command:
+    argv:
+      - gpg
+      - --dearmor
+      - --yes
+      - -o
+      - "{{ wazuh_agent_repository_keyring }}"
+      - "{{ wazuh_agent_repository_key_tmp }}"
+    creates: "{{ wazuh_agent_repository_keyring }}"
+
+- name: Configure Wazuh APT repository
+  ansible.builtin.copy:
+    dest: "{{ wazuh_agent_repository_file }}"
+    content: "{{ wazuh_agent_repository }}\n"
+    owner: root
+    group: root
+    mode: "0644"
+
+- name: Update APT cache
+  ansible.builtin.apt:
+    update_cache: true
+
+- name: Check manager connectivity - agent communication
+  ansible.builtin.wait_for:
+    host: "{{ wazuh_manager_ip }}"
+    port: 1514
+    state: started
+    timeout: 10
+  changed_when: false
+
+- name: Check manager connectivity - enrollment
+  ansible.builtin.wait_for:
+    host: "{{ wazuh_manager_ip }}"
+    port: 1515
+    state: started
+    timeout: 10
+  changed_when: false
+
+- name: Install Wazuh Agent
+  ansible.builtin.apt:
+    name: "wazuh-agent={{ wazuh_manager_package_version }}"
+    state: present
+    allow_downgrade: true
+  environment:
+    WAZUH_MANAGER: "{{ wazuh_manager_ip }}"
+    WAZUH_AGENT_NAME: "{{ wazuh_agent_name }}"
+    WAZUH_AGENT_GROUP: "{{ wazuh_agent_group }}"
+
+- name: Enable and start Wazuh Agent
+  ansible.builtin.systemd:
+    name: "{{ wazuh_agent_service }}"
+    enabled: true
+    state: started
+    daemon_reload: true
+
+- name: Hold Wazuh Agent package version
+  ansible.builtin.dpkg_selections:
+    name: wazuh-agent
+    selection: hold

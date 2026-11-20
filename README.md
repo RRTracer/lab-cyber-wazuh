@@ -4,7 +4,7 @@
 ![Virtualization](https://img.shields.io/badge/virtualization-VirtualBox-blue)
 ![Provisioning](https://img.shields.io/badge/provisioning-Vagrant-orange)
 ![Automation](https://img.shields.io/badge/automation-Ansible-red)
-![SIEM](https://img.shields.io/badge/SIEM-Wazuh-4.x-purple)
+![SIEM](https://img.shields.io/badge/SIEM-Wazuh-purple)
 ![Status](https://img.shields.io/badge/status-lab%20en%20development-yellow)
 
 Laboratoire local de cybersécurité construit autour de **Wazuh**,

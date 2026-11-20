@@ -1,17 +1,19 @@
-# Lab Cyber Wazuh --- Infrastructure as Code & supervision de sécurité
+# Lab Cyber Wazuh & Caldera --- Infrastructure as Code, supervision et émulation
 
 ![Platform](https://img.shields.io/badge/platform-Linux-informational)
 ![Virtualization](https://img.shields.io/badge/virtualization-VirtualBox-blue)
 ![Provisioning](https://img.shields.io/badge/provisioning-Vagrant-orange)
 ![Automation](https://img.shields.io/badge/automation-Ansible-red)
-![SIEM](https://img.shields.io/badge/SIEM-Wazuh-purple)
+![SIEM](https://img.shields.io/badge/SIEM-Wazuh-4.x-purple)
+![Adversary Emulation](https://img.shields.io/badge/Adversary%20Emulation-Caldera-blueviolet)
 ![Status](https://img.shields.io/badge/status-lab%20en%20development-yellow)
 
-Laboratoire local de cybersécurité construit autour de **Wazuh**,
+Laboratoire local de cybersécurité construit autour de **Wazuh**, **MITRE Caldera**,
 **Ansible**, **Vagrant** et **VirtualBox**.\
-Le projet a pour objectif de déployer automatiquement une plateforme
-centralisée de supervision de sécurité ainsi qu'un agent Linux, dans un
-environnement virtualisé reproductible.
+Le projet déploie une plateforme centralisée de supervision et de détection
+(Wazuh), un client Linux supervisé et un serveur Caldera dédié aux
+expérimentations contrôlées de Purple Team, dans un environnement
+virtualisé reproductible.
 
 > **Type de projet :** laboratoire personnel / apprentissage /
 > démonstration technique.\
@@ -30,7 +32,7 @@ environnement virtualisé reproductible.
 -   [Déploiement rapide](#-déploiement-rapide)
 -   [Utilisation](#-utilisation)
 -   [Ansible et automatisation](#-ansible-et-automatisation)
--   [Accès au Wazuh Dashboard](#-accès-au-wazuh-dashboard)
+-   [Accès aux interfaces web](#-accès-aux-interfaces-web)
 -   [Sécurité et secrets](#-sécurité-et-secrets)
 -   [Dépannage](#-dépannage)
 -   [Documentation](#-documentation)
@@ -48,79 +50,73 @@ d'administration système, réseau et cybersécurité :
     VirtualBox**.
 -   Automatiser la configuration des systèmes Linux avec **Ansible**.
 -   Déployer une architecture **Wazuh All-in-One**.
--   Installer et enrôler un agent Linux.
+-   Installer et enrôler un agent Wazuh Linux.
+-   Déployer automatiquement **MITRE Caldera** sur une VM dédiée avec un rôle Ansible.
 -   Centraliser les événements de sécurité.
 -   Comprendre les flux réseau entre agent et serveur.
 -   Utiliser Ansible Vault pour protéger les variables sensibles.
 -   Construire des rôles Ansible réutilisables et idempotents.
 -   Disposer d'un environnement reproductible pour tester les
-    fonctionnalités de supervision et de détection.
+    fonctionnalités de supervision, de détection et les scénarios
+    pédagogiques contrôlés de Purple Team.
 
 ------------------------------------------------------------------------
 
 ## 🏗️ Architecture
 
-Le laboratoire repose sur deux machines virtuelles Ubuntu Server 22.04
-LTS.
+Le laboratoire repose sur trois machines virtuelles Ubuntu Server 22.04 LTS,
+connectées au réseau privé Host-only de VirtualBox.
 
-``` text
-                       POSTE HÔTE LINUX
-              +--------------------------------+
-              |                                |
-              |  Vagrant                       |
-              |  VirtualBox                    |
-              |  Ansible                       |
-              |                                |
-              +---------------+----------------+
-                              |
-                       Réseau Host-only
-                       192.168.56.0/24
-                              |
-              +---------------+----------------+
-              |                                |
-      +-------+--------+               +-------+--------+
-      |    wazuh-01    |               |    client-01   |
-      | 192.168.56.10  |               | 192.168.56.11  |
-      +----------------+               +----------------+
-      | Wazuh Manager  |<--- TCP 1514 -| Wazuh Agent    |
-      | Wazuh Indexer  |<--- TCP 1515 -|                |
-      | Wazuh Dashboard|               |                |
-      +----------------+               +----------------+
-              |
-         HTTPS / TCP 443
-              |
-        Navigateur hôte
+```text
+                         POSTE HÔTE LINUX
+                +--------------------------------+
+                | Vagrant / VirtualBox / Ansible |
+                +---------------+----------------+
+                                |
+                         Réseau Host-only
+                          192.168.56.0/24
+                                |
+          +---------------------+----------------------+
+          |                     |                      |
+   +------+-------+      +------+-------+       +------+---------+
+   |   wazuh-01   |      |  client-01   |       | caldera-server |
+   | 192.168.56.10|      |192.168.56.11|       | 192.168.56.12 |
+   +--------------+      +--------------+       +----------------+
+   | Wazuh Manager|<---->| Wazuh Agent  |       | MITRE Caldera  |
+   | Indexer      |      | Client Linux |       | Server / UI    |
+   | Dashboard    |      +--------------+       +----------------+
+   +--------------+                                      |
+          |                                      TCP 8888 / HTTP
+     HTTPS / TCP 443                                       |
+          +---------------- Navigateur hôte ---------------+
 ```
 
 ### Machines virtuelles
 
-  -----------------------------------------------------------------------
-  Machine           Adresse IP        Fonction          Ressources
-                                                        prévues
-  ----------------- ----------------- ----------------- -----------------
-  `wazuh-01`        `192.168.56.10`   Manager, Indexer, 4 vCPU / 8 Go RAM
-                                      Dashboard         / 60 Go disque
+| Machine | Adresse IP | Fonction | Ressources prévues |
+|---|---|---|---|
+| `wazuh-01` | `192.168.56.10` | Wazuh Manager, Indexer et Dashboard | 4 vCPU / 8 Go RAM / 60 Go disque |
+| `client-01` | `192.168.56.11` | Client Linux avec agent Wazuh | 2 vCPU / 2 Go RAM |
+| `caldera-01` (Vagrant : `caldera-server`) | `192.168.56.12` | Serveur MITRE Caldera et interface web | 2 vCPU / 4 Go RAM |
 
-  `client-01`       `192.168.56.11`   Agent Wazuh       2 vCPU / 2 Go RAM
-  -----------------------------------------------------------------------
-
-Les ressources sont des valeurs de configuration prévues pour le
-laboratoire. Elles peuvent être adaptées à la capacité du poste hôte.
+Les ressources sont les valeurs configurées pour le laboratoire. Elles
+peuvent être adaptées aux capacités du poste hôte.
 
 ### Flux réseau principaux
 
-  Source        Destination         Port Fonction
-  ------------- ------------- ---------- -------------------------------
-  Hôte Linux    `wazuh-01`        TCP 22 Administration SSH / Ansible
-  Hôte Linux    `wazuh-01`       TCP 443 Interface Dashboard HTTPS
-  Hôte Linux    `client-01`       TCP 22 Administration SSH / Ansible
-  `client-01`   `wazuh-01`      TCP 1514 Communication Agent / Manager
-  `client-01`   `wazuh-01`      TCP 1515 Enrôlement de l'agent
+| Source | Destination | Port | Fonction |
+|---|---|---:|---|
+| Hôte Linux | `wazuh-01` | TCP 22 | Administration SSH / Ansible |
+| Hôte Linux | `wazuh-01` | TCP 443 | Wazuh Dashboard HTTPS |
+| Hôte Linux | `client-01` | TCP 22 | Administration SSH / Ansible |
+| Hôte Linux | `caldera-server` | TCP 22 | Administration SSH / Ansible |
+| Hôte Linux | `caldera-server` | TCP 8888 | Interface web Caldera (HTTP dans la configuration actuelle) |
+| `client-01` | `wazuh-01` | TCP 1514 | Communication Agent / Manager |
+| `client-01` | `wazuh-01` | TCP 1515 | Enrôlement de l'agent Wazuh |
 
-Le réseau Host-only permet aux machines virtuelles de communiquer avec
-le poste hôte sans exposer directement le laboratoire sur le réseau
-local physique. Le réseau NAT de Vagrant peut également être utilisé
-pour l'accès Internet des VM.
+Le réseau Host-only permet aux VM de communiquer avec le poste hôte sans
+exposer directement le laboratoire au réseau physique. Le réseau NAT de
+Vagrant peut également être utilisé pour l'accès Internet des VM.
 
 ------------------------------------------------------------------------
 
@@ -131,6 +127,9 @@ pour l'accès Internet des VM.
   ------------------------------------------------------------------------ -----------------------------------
   [Wazuh](https://wazuh.com/)                                              SIEM / XDR open source, collecte et
                                                                            analyse des événements
+
+  [MITRE Caldera](https://caldera.mitre.org/)                               Plateforme d'émulation d'adversaire et
+                                                                           orchestration de laboratoire contrôlé
 
   [Ansible](https://www.ansible.com/)                                      Automatisation et gestion de
                                                                            configuration
@@ -173,21 +172,24 @@ lab-cyber-wazuh/
 │       │   ├── common.yml
 │       │   ├── wazuh-server.yml
 │       │   ├── wazuh-agent.yml
+│       │   ├── caldera-server.yml
 │       │   └── site.yml
 │       │
 │       └── roles/
 │           ├── common/
 │           ├── wazuh-server/
-│           └── wazuh-agent/
+│           ├── wazuh-agent/
+│           └── caldera-server/
 │
 ├── .gitignore
 ├── LICENSE
 └── README.md
 ```
 
-> L'arborescence est la structure cible du projet. Certains fichiers ou
-> rôles peuvent être encore en cours de développement selon l'avancement
-> réel du laboratoire.
+L'arborescence ci-dessus présente les composants principaux du dépôt.
+Les fichiers internes de chaque rôle sont organisés selon les
+conventions Ansible (`defaults/`, `tasks/`, `handlers/`, `templates/`,
+`files/`).
 
 ### Organisation Ansible
 
@@ -196,7 +198,8 @@ lab-cyber-wazuh/
 -   `playbooks/` : orchestration des déploiements.
 -   `roles/common/` : préparation des systèmes.
 -   `roles/wazuh-server/` : installation du serveur Wazuh.
--   `roles/wazuh-agent/` : installation et configuration de l'agent.
+-   `roles/wazuh-agent/` : installation et configuration de l'agent Wazuh.
+-   `roles/caldera-server/` : installation et configuration du serveur MITRE Caldera, de son environnement applicatif et de son service systemd.
 
 ------------------------------------------------------------------------
 
@@ -209,7 +212,7 @@ Sur le poste hôte Linux :
 -   Ansible installé.
 -   Connexion Internet pour télécharger les images et paquets.
 -   Virtualisation matérielle activée dans le BIOS/UEFI.
--   Ressources suffisantes pour exécuter les deux VM simultanément.
+-   Ressources suffisantes pour exécuter les trois VM simultanément (prévoir environ 14 Go de RAM selon la configuration retenue).
 
 Vérifier les installations :
 
@@ -259,6 +262,7 @@ Depuis le poste hôte :
 ``` bash
 ping -c 4 192.168.56.10
 ping -c 4 192.168.56.11
+ping -c 4 192.168.56.12
 ```
 
 ### 4. Accéder au répertoire Ansible
@@ -279,7 +283,7 @@ ansible-inventory --graph
 ansible all -m ping --ask-vault-pass
 ```
 
-Les deux machines doivent répondre avec `pong`.
+Les trois machines doivent répondre avec `pong`.
 
 ### 7. Déployer le socle commun
 
@@ -315,6 +319,37 @@ Lancer le déploiement :
 ansible-playbook playbooks/wazuh-agent.yml --ask-vault-pass
 ```
 
+### 10. Déployer le serveur MITRE Caldera
+
+Le serveur Caldera est déployé sur la VM `caldera-server` (`192.168.56.12`)
+par le rôle Ansible `caldera-server`. Le playbook dédié est
+`playbooks/caldera-server.yml`.
+
+Vérifier la connexion SSH et l'inventaire :
+
+```bash
+ansible caldera_server -m ping
+```
+
+Vérifier la syntaxe du playbook :
+
+```bash
+ansible-playbook playbooks/caldera-server.yml --syntax-check
+```
+
+Lancer le déploiement :
+
+```bash
+ansible-playbook playbooks/caldera-server.yml
+```
+
+Si l'inventaire charge des variables chiffrées avec Ansible Vault, ajouter
+`--ask-vault-pass` aux commandes.
+
+Le rôle installe Caldera dans `/opt/caldera` et configure le service
+systemd `caldera`. L'interface web est accessible depuis le poste hôte à
+`http://192.168.56.12:8888`.
+
 > Les commandes supposent que les playbooks, les variables Vault et les
 > rôles correspondants sont présents et configurés. Adapter les
 > commandes si le projet évolue.
@@ -348,6 +383,7 @@ vagrant reload
 ``` bash
 vagrant ssh wazuh
 vagrant ssh client
+vagrant ssh caldera-server
 ```
 
 ### Afficher l'état des machines
@@ -395,6 +431,7 @@ ansible all -b -m command -a "id" --ask-vault-pass
 
 ``` bash
 ansible-playbook playbooks/site.yml --syntax-check --ask-vault-pass
+ansible-playbook playbooks/caldera-server.yml --syntax-check
 ```
 
 ### Lancer le déploiement global
@@ -414,21 +451,35 @@ et en examinant le nombre de tâches `changed`.
 
 ------------------------------------------------------------------------
 
-## 🌐 Accès au Wazuh Dashboard
+## 🌐 Accès aux interfaces web
+
+### Wazuh Dashboard
 
 Une fois le serveur déployé et les services actifs, ouvrir :
 
 **https://192.168.56.10**
 
-Le certificat TLS généré pour un laboratoire peut être auto-signé. Un
-avertissement du navigateur est donc possible.
+Le certificat TLS du laboratoire peut être auto-signé. Les identifiants
+initiaux sont générés lors de l'installation et doivent être conservés
+de manière sécurisée. Dans le Dashboard, vérifier que `client-01`
+apparaît avec le statut **Active**.
 
-Les identifiants initiaux sont générés lors de l'installation. Ils
-doivent être récupérés dans l'artefact local prévu à cet effet et
-conservés de manière sécurisée. Ne jamais les publier dans le dépôt Git.
+### MITRE Caldera
 
-Dans l'interface Wazuh, vérifier que `client-01` apparaît dans la
-gestion des agents avec le statut **Active**.
+Ouvrir l'interface depuis le poste hôte :
+
+**http://192.168.56.12:8888**
+
+Dans la configuration actuelle, le service est lancé avec l'option
+`--insecure`. Les journaux indiquent que Caldera utilise alors les
+comptes définis dans `conf/default.yml`. Consulte ce fichier directement
+sur le serveur pour retrouver les identifiants configurés.
+
+> **Sécurité :** `--insecure` utilise les comptes par défaut. Ce mode
+> est réservé au laboratoire isolé et ne doit pas être utilisé sur une
+> instance exposée à Internet ou à un réseau non fiable. Ne publie jamais
+> les identifiants dans le dépôt. Prévois une authentification adaptée
+> avant toute exposition hors du réseau privé.
 
 ------------------------------------------------------------------------
 
@@ -545,6 +596,36 @@ nc -vz 192.168.56.10 1515
 La connectivité réseau seule ne garantit pas que l'enrôlement a réussi.
 Confirmer le statut de l'agent dans le Dashboard.
 
+### Le service Caldera ne démarre pas ou l'interface est inaccessible
+
+Sur `caldera-server` :
+
+```bash
+sudo systemctl status caldera
+sudo journalctl -u caldera -n 100 --no-pager
+sudo ss -lntp | grep 8888
+```
+
+Suivre les journaux en direct :
+
+```bash
+sudo journalctl -u caldera -f
+```
+
+#### Erreur npm `EACCES` sur `/home/caldera/.npm`
+
+Si la compilation de l'interface Vue.js échoue avec une erreur de
+permissions, corriger le propriétaire du cache npm :
+
+```bash
+sudo chown -R caldera:caldera /home/caldera/.npm
+sudo systemctl restart caldera
+```
+
+Le rôle Ansible `caldera-server` doit également garantir que le cache npm
+appartient à l'utilisateur de service `caldera`, afin que la correction
+soit persistante après un nouveau déploiement.
+
 ------------------------------------------------------------------------
 
 ## 📚 Documentation
@@ -568,6 +649,8 @@ Documentation officielle :
 -   [Wazuh Documentation](https://documentation.wazuh.com/)
 -   [Wazuh Installation
     Guide](https://documentation.wazuh.com/current/installation-guide/)
+-   [MITRE Caldera](https://caldera.mitre.org/)
+-   [MITRE Caldera GitHub](https://github.com/mitre/caldera)
 -   [Ansible Documentation](https://docs.ansible.com/)
 -   [Ansible
     Vault](https://docs.ansible.com/ansible/latest/vault_guide/index.html)
@@ -590,6 +673,8 @@ Les évolutions envisagées pour enrichir le laboratoire :
 -   [ ] Construire des règles de détection personnalisées.
 -   [ ] Ajouter d'autres agents Linux.
 -   [ ] Ajouter un poste Windows supervisé.
+-   [ ] Documenter les scénarios pédagogiques Purple Team et leur détection dans Wazuh.
+-   [ ] Renforcer la configuration de sécurité de Caldera avant toute utilisation sur un réseau autre que le Host-only.
 -   [ ] Mettre en place des sauvegardes et une procédure de
     restauration.
 -   [ ] Étudier une architecture Wazuh distribuée.
@@ -618,5 +703,5 @@ de réutilisation du projet.
 
 ------------------------------------------------------------------------
 
-**Projet personnel --- Lab Cyber Wazuh**\
+**Projet personnel --- Lab Cyber Wazuh & Caldera**\
 *Infrastructure as Code · Automatisation · Supervision · Détection*

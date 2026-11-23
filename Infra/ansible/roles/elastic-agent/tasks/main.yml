@@ -1,0 +1,68 @@
+---
+- name: Verify operating system
+  ansible.builtin.assert:
+    that:
+      - ansible_distribution == "Ubuntu"
+      - ansible_distribution_version == "22.04"
+      - ansible_architecture == "x86_64"
+    fail_msg: "This role requires Ubuntu 22.04 x86_64."
+
+- name: Verify Fleet enrollment parameters are available
+  ansible.builtin.assert:
+    that:
+      - elastic_fleet_url is defined
+      - elastic_fleet_url | length > 0
+      - elastic_enrollment_token is defined
+      - elastic_enrollment_token | length > 0
+    fail_msg: >
+      Fleet URL / enrollment token missing. Run playbooks/elastic-agent.yml so
+      the elastic-server host provides them (or set the variables manually).
+
+- name: Wait for Fleet Server to be reachable
+  ansible.builtin.wait_for:
+    host: "{{ elastic_fleet_url | urlsplit('hostname') }}"
+    port: "{{ elastic_fleet_url | urlsplit('port') }}"
+    state: started
+    timeout: 60
+  changed_when: false
+
+- name: Check whether Elastic Agent is already installed
+  ansible.builtin.stat:
+    path: /opt/Elastic/Agent/elastic-agent
+  register: elastic_agent_binary
+
+- name: Install and enroll Elastic Agent
+  when: not elastic_agent_binary.stat.exists
+  block:
+    - name: Download Elastic Agent archive
+      ansible.builtin.get_url:
+        url: "https://artifacts.elastic.co/downloads/beats/elastic-agent/elastic-agent-{{ elastic_version }}-linux-x86_64.tar.gz"
+        dest: "/tmp/elastic-agent-{{ elastic_version }}.tar.gz"
+        mode: "0644"
+
+    - name: Extract Elastic Agent archive
+      ansible.builtin.unarchive:
+        src: "/tmp/elastic-agent-{{ elastic_version }}.tar.gz"
+        dest: /opt
+        remote_src: true
+        creates: "/opt/elastic-agent-{{ elastic_version }}-linux-x86_64"
+
+    - name: Install and enroll Elastic Agent into Fleet
+      ansible.builtin.command:
+        argv:
+          - "/opt/elastic-agent-{{ elastic_version }}-linux-x86_64/elastic-agent"
+          - install
+          - "--force"
+          - "--non-interactive"
+          - "--url={{ elastic_fleet_url }}"
+          - "--enrollment-token={{ elastic_enrollment_token }}"
+          - "--insecure"
+      register: elastic_agent_install
+      changed_when: true
+      no_log: true
+
+- name: Ensure Elastic Agent service is running
+  ansible.builtin.systemd_service:
+    name: elastic-agent
+    enabled: true
+    state: started

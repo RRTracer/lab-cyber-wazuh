@@ -1,0 +1,23 @@
+# {{ ansible_managed }}
+# Elasticsearch — nœud unique de lab.
+# Sécurité (authentification) activée, mais TLS HTTP désactivé pour
+# simplifier le câblage Kibana/Fleet/Agent dans ce lab. NE PAS utiliser tel
+# quel en production.
+
+cluster.name: lab-elastic
+node.name: {{ inventory_hostname }}
+
+network.host: 0.0.0.0
+http.port: {{ elasticsearch_http_port }}
+
+discovery.type: single-node
+
+path.data: /var/lib/elasticsearch
+path.logs: /var/log/elasticsearch
+
+# Authentification activée, chiffrement de transport interne au nœud désactivé
+xpack.security.enabled: true
+xpack.security.http.ssl.enabled: false
+xpack.security.transport.ssl.enabled: false
+
+xpack.license.self_generated.type: basic

@@ -1,0 +1,25 @@
+# {{ ansible_managed }}
+# Kibana — lab single-node.
+
+server.host: "0.0.0.0"
+server.port: {{ kibana_port }}
+server.publicBaseUrl: "{{ kibana_public_url }}"
+
+elasticsearch.hosts: ["{{ elasticsearch_url }}"]
+elasticsearch.username: "kibana_system"
+elasticsearch.password: "{{ kibana_system_password }}"
+
+# Clés de chiffrement des objets sauvegardés / reporting / sécurité
+xpack.encryptedSavedObjects.encryptionKey: "{{ kibana_encryption_key_saved_objects }}"
+xpack.reporting.encryptionKey: "{{ kibana_encryption_key_reporting }}"
+xpack.security.encryptionKey: "{{ kibana_encryption_key_security }}"
+
+# Fleet : hôtes annoncés aux agents enrôlés
+xpack.fleet.agents.fleet_server.hosts: ["{{ fleet_server_public_url }}"]
+xpack.fleet.outputs:
+  - id: fleet-default-output
+    name: default
+    type: elasticsearch
+    hosts: ["{{ elasticsearch_public_url }}"]
+    is_default: true
+    is_default_monitoring: true

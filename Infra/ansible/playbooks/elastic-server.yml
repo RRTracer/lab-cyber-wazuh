@@ -1,0 +1,7 @@
+---
+- name: Deploy Elastic detection server (Elasticsearch + Kibana + Fleet)
+  hosts: elastic_server
+  become: true
+
+  roles:
+    - elastic-server

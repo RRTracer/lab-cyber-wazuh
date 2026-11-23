@@ -1,0 +1,50 @@
+---
+- name: Retrieve Fleet enrollment token from the Elastic server
+  hosts: elastic_server
+  become: true
+  gather_facts: false
+
+  # Réutilise les variables (URLs, mot de passe, politique) du rôle serveur
+  vars_files:
+    - ../roles/elastic-server/defaults/main.yml
+
+  tasks:
+    - name: Get enrollment token for the endpoints policy
+      ansible.builtin.uri:
+        url: "{{ kibana_public_url }}/api/fleet/enrollment_api_keys?kuery=policy_id:%22{{ elastic_agent_policy_id }}%22"
+        method: GET
+        url_username: elastic
+        url_password: "{{ elastic_password }}"
+        force_basic_auth: true
+        headers:
+          kbn-xsrf: "ansible"
+        status_code: 200
+      register: elastic_enrollment_keys
+      no_log: true
+
+    - name: Store Fleet enrollment token and URL
+      ansible.builtin.set_fact:
+        elastic_enrollment_token: "{{ elastic_enrollment_keys.json.list[0].api_key }}"
+        elastic_fleet_url: "{{ fleet_server_public_url }}"
+      no_log: true
+
+    - name: Verify a token was found
+      ansible.builtin.assert:
+        that:
+          - elastic_enrollment_token | length > 0
+        fail_msg: >
+          No enrollment token found for policy '{{ elastic_agent_policy_id }}'.
+          Deploy the Elastic server first (playbooks/elastic-server.yml).
+
+- name: Deploy Elastic Agent
+  hosts: elastic_agents
+  become: true
+
+  vars:
+    elastic_fleet_url: >-
+      {{ hostvars[groups['elastic_server'][0]].elastic_fleet_url }}
+    elastic_enrollment_token: >-
+      {{ hostvars[groups['elastic_server'][0]].elastic_enrollment_token }}
+
+  roles:
+    - elastic-agent

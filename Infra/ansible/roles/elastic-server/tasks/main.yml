@@ -1,0 +1,356 @@
+---
+# ===========================================================================
+# Installation Elasticsearch + Kibana + Fleet Server (nœud unique de lab)
+# ===========================================================================
+
+- name: Verify operating system
+  ansible.builtin.assert:
+    that:
+      - ansible_distribution == "Ubuntu"
+      - ansible_distribution_version == "22.04"
+      - ansible_architecture == "x86_64"
+    fail_msg: "This role requires Ubuntu 22.04 x86_64."
+
+- name: Set vm.max_map_count for Elasticsearch
+  ansible.builtin.copy:
+    dest: /etc/sysctl.d/99-elasticsearch.conf
+    content: "vm.max_map_count=262144\n"
+    owner: root
+    group: root
+    mode: "0644"
+  register: elastic_sysctl
+
+- name: Apply sysctl settings
+  ansible.builtin.command:
+    cmd: sysctl --system
+  when: elastic_sysctl.changed
+  changed_when: elastic_sysctl.changed
+
+- name: Install dependencies
+  ansible.builtin.apt:
+    name:
+      - curl
+      - gnupg
+      - apt-transport-https
+      - ca-certificates
+    state: present
+    update_cache: true
+    cache_valid_time: 3600
+
+# --- Dépôt APT Elastic 8.x ---------------------------------------------------
+
+- name: Download Elastic repository GPG key
+  ansible.builtin.get_url:
+    url: "{{ elastic_repo_key_url }}"
+    dest: /tmp/GPG-KEY-elasticsearch
+    mode: "0644"
+
+- name: Convert Elastic GPG key to keyring format
+  ansible.builtin.command:
+    argv:
+      - gpg
+      - --dearmor
+      - --yes
+      - -o
+      - "{{ elastic_repo_keyring }}"
+      - /tmp/GPG-KEY-elasticsearch
+    creates: "{{ elastic_repo_keyring }}"
+
+- name: Configure Elastic APT repository
+  ansible.builtin.copy:
+    dest: "{{ elastic_repo_file }}"
+    content: "{{ elastic_repo }}\n"
+    owner: root
+    group: root
+    mode: "0644"
+
+- name: Update APT cache
+  ansible.builtin.apt:
+    update_cache: true
+
+# --- Elasticsearch -----------------------------------------------------------
+
+- name: Install Elasticsearch
+  ansible.builtin.apt:
+    name: "elasticsearch={{ elastic_version }}"
+    state: present
+    allow_downgrade: true
+
+- name: Hold Elasticsearch package version
+  ansible.builtin.dpkg_selections:
+    name: elasticsearch
+    selection: hold
+
+- name: Configure Elasticsearch JVM heap (lab sizing)
+  ansible.builtin.copy:
+    dest: /etc/elasticsearch/jvm.options.d/heap.options
+    content: |
+      -Xms1g
+      -Xmx1g
+    owner: root
+    group: elasticsearch
+    mode: "0660"
+  notify: Restart Elasticsearch
+
+- name: Deploy Elasticsearch configuration
+  ansible.builtin.template:
+    src: elasticsearch.yml.j2
+    dest: /etc/elasticsearch/elasticsearch.yml
+    owner: root
+    group: elasticsearch
+    mode: "0660"
+  notify: Restart Elasticsearch
+
+- name: Enable and start Elasticsearch
+  ansible.builtin.systemd_service:
+    name: elasticsearch
+    enabled: true
+    state: started
+    daemon_reload: true
+
+- name: Apply pending Elasticsearch changes
+  ansible.builtin.meta: flush_handlers
+
+- name: Wait for Elasticsearch HTTP API
+  ansible.builtin.wait_for:
+    host: 127.0.0.1
+    port: "{{ elasticsearch_http_port }}"
+    state: started
+    delay: 5
+    timeout: 300
+
+# --- Initialisation des mots de passe (une seule fois) -----------------------
+
+- name: Check bootstrap marker
+  ansible.builtin.stat:
+    path: "{{ elastic_bootstrap_marker }}"
+  register: elastic_bootstrap
+
+- name: Bootstrap Elasticsearch passwords
+  when: not elastic_bootstrap.stat.exists
+  block:
+    - name: Reset temporary elastic password
+      ansible.builtin.command:
+        cmd: /usr/share/elasticsearch/bin/elasticsearch-reset-password -u elastic -b -a -s
+      register: elastic_reset
+      changed_when: true
+      no_log: true
+
+    - name: Set elastic user password to lab value
+      ansible.builtin.uri:
+        url: "{{ elasticsearch_url }}/_security/user/elastic/_password"
+        method: POST
+        url_username: elastic
+        url_password: "{{ elastic_reset.stdout | trim }}"
+        force_basic_auth: true
+        body_format: json
+        body:
+          password: "{{ elastic_password }}"
+        status_code: 200
+      no_log: true
+
+    - name: Set kibana_system user password to lab value
+      ansible.builtin.uri:
+        url: "{{ elasticsearch_url }}/_security/user/kibana_system/_password"
+        method: POST
+        url_username: elastic
+        url_password: "{{ elastic_password }}"
+        force_basic_auth: true
+        body_format: json
+        body:
+          password: "{{ kibana_system_password }}"
+        status_code: 200
+      no_log: true
+
+    - name: Create bootstrap marker
+      ansible.builtin.file:
+        path: "{{ elastic_bootstrap_marker }}"
+        state: touch
+        owner: elasticsearch
+        group: elasticsearch
+        mode: "0600"
+
+# --- Kibana ------------------------------------------------------------------
+
+- name: Install Kibana
+  ansible.builtin.apt:
+    name: "kibana={{ elastic_version }}"
+    state: present
+    allow_downgrade: true
+
+- name: Hold Kibana package version
+  ansible.builtin.dpkg_selections:
+    name: kibana
+    selection: hold
+
+- name: Deploy Kibana configuration
+  ansible.builtin.template:
+    src: kibana.yml.j2
+    dest: /etc/kibana/kibana.yml
+    owner: root
+    group: kibana
+    mode: "0660"
+  notify: Restart Kibana
+
+- name: Enable and start Kibana
+  ansible.builtin.systemd_service:
+    name: kibana
+    enabled: true
+    state: started
+    daemon_reload: true
+
+- name: Apply pending Kibana changes
+  ansible.builtin.meta: flush_handlers
+
+- name: Wait for Kibana to be available
+  ansible.builtin.uri:
+    url: "{{ kibana_public_url }}/api/status"
+    method: GET
+    url_username: elastic
+    url_password: "{{ elastic_password }}"
+    force_basic_auth: true
+    status_code: 200
+  register: kibana_status
+  until: kibana_status.status == 200
+  retries: 60
+  delay: 10
+  no_log: true
+
+# --- Fleet : initialisation --------------------------------------------------
+
+- name: Initialize Fleet
+  ansible.builtin.uri:
+    url: "{{ kibana_public_url }}/api/fleet/setup"
+    method: POST
+    url_username: elastic
+    url_password: "{{ elastic_password }}"
+    force_basic_auth: true
+    headers:
+      kbn-xsrf: "ansible"
+    status_code: 200
+  no_log: true
+
+- name: Create Fleet Server agent policy
+  ansible.builtin.uri:
+    url: "{{ kibana_public_url }}/api/fleet/agent_policies"
+    method: POST
+    url_username: elastic
+    url_password: "{{ elastic_password }}"
+    force_basic_auth: true
+    headers:
+      kbn-xsrf: "ansible"
+    body_format: json
+    body:
+      id: "fleet-server-policy"
+      name: "Fleet Server Policy"
+      namespace: "default"
+      has_fleet_server: true
+      monitoring_enabled: ["logs", "metrics"]
+    status_code: [200, 409]
+  no_log: true
+
+# --- Fleet Server (elastic-agent installé sur ce nœud) -----------------------
+
+- name: Check whether Elastic Agent (Fleet Server) is already installed
+  ansible.builtin.stat:
+    path: /opt/Elastic/Agent/elastic-agent
+  register: fleet_agent_binary
+
+- name: Install Fleet Server
+  when: not fleet_agent_binary.stat.exists
+  block:
+    - name: Create Fleet Server service token
+      ansible.builtin.uri:
+        url: "{{ elasticsearch_url }}/_security/service/elastic/fleet-server/credential/token/fleet-server-{{ ansible_date_time.epoch }}"
+        method: POST
+        url_username: elastic
+        url_password: "{{ elastic_password }}"
+        force_basic_auth: true
+        status_code: 200
+      register: fleet_service_token
+      no_log: true
+
+    - name: Download Elastic Agent archive
+      ansible.builtin.get_url:
+        url: "https://artifacts.elastic.co/downloads/beats/elastic-agent/elastic-agent-{{ elastic_version }}-linux-x86_64.tar.gz"
+        dest: "/tmp/elastic-agent-{{ elastic_version }}.tar.gz"
+        mode: "0644"
+
+    - name: Extract Elastic Agent archive
+      ansible.builtin.unarchive:
+        src: "/tmp/elastic-agent-{{ elastic_version }}.tar.gz"
+        dest: /opt
+        remote_src: true
+        creates: "/opt/elastic-agent-{{ elastic_version }}-linux-x86_64"
+
+    - name: Install and enroll Fleet Server
+      ansible.builtin.command:
+        argv:
+          - "/opt/elastic-agent-{{ elastic_version }}-linux-x86_64/elastic-agent"
+          - install
+          - "--force"
+          - "--non-interactive"
+          - "--fleet-server-es={{ elasticsearch_public_url }}"
+          - "--fleet-server-service-token={{ fleet_service_token.json.token.value }}"
+          - "--fleet-server-policy=fleet-server-policy"
+          - "--fleet-server-port={{ fleet_server_port }}"
+          - "--fleet-server-insecure-http"
+          - "--fleet-server-es-insecure"
+          - "--url={{ fleet_server_public_url }}"
+      register: fleet_server_install
+      changed_when: true
+      no_log: true
+
+- name: Wait for Fleet Server port
+  ansible.builtin.wait_for:
+    host: 127.0.0.1
+    port: "{{ fleet_server_port }}"
+    state: started
+    delay: 5
+    timeout: 300
+
+# --- Politique des agents (client-01) et jeton d'enrôlement ------------------
+
+- name: Create agent policy for endpoints
+  ansible.builtin.uri:
+    url: "{{ kibana_public_url }}/api/fleet/agent_policies"
+    method: POST
+    url_username: elastic
+    url_password: "{{ elastic_password }}"
+    force_basic_auth: true
+    headers:
+      kbn-xsrf: "ansible"
+    body_format: json
+    body:
+      id: "{{ elastic_agent_policy_id }}"
+      name: "{{ elastic_agent_policy_name }}"
+      namespace: "default"
+      monitoring_enabled: ["logs", "metrics"]
+    status_code: [200, 409]
+  no_log: true
+
+- name: Retrieve enrollment token for the endpoints policy
+  ansible.builtin.uri:
+    url: "{{ kibana_public_url }}/api/fleet/enrollment_api_keys?kuery=policy_id:%22{{ elastic_agent_policy_id }}%22"
+    method: GET
+    url_username: elastic
+    url_password: "{{ elastic_password }}"
+    force_basic_auth: true
+    headers:
+      kbn-xsrf: "ansible"
+    status_code: 200
+  register: elastic_enrollment_keys
+  no_log: true
+
+- name: Expose enrollment token and Fleet URL as facts
+  ansible.builtin.set_fact:
+    elastic_enrollment_token: "{{ elastic_enrollment_keys.json.list[0].api_key }}"
+    elastic_fleet_url: "{{ fleet_server_public_url }}"
+  no_log: true
+
+- name: Display Elastic access information
+  ansible.builtin.debug:
+    msg:
+      - "Kibana : {{ kibana_public_url }}  (user: elastic)"
+      - "Fleet Server : {{ fleet_server_public_url }}"
+      - "Politique agents : {{ elastic_agent_policy_name }}"

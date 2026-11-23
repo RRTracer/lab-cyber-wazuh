@@ -1,0 +1,11 @@
+---
+# Doit correspondre à la version du serveur Elastic
+elastic_version: "8.19.2"
+
+# Serveur Elastic (groupe d'inventaire) d'où proviennent le jeton et l'URL Fleet
+elastic_server_group: elastic_server
+
+# Fournis par le rôle elastic-server via hostvars (voir playbooks/elastic-agent.yml),
+# surchargeables manuellement si besoin.
+# elastic_fleet_url: "http://192.168.56.13:8220"
+# elastic_enrollment_token: "..."

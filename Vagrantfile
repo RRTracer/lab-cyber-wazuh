@@ -7,13 +7,13 @@ Vagrant.configure("2") do |config|
 
 
   machines = [
-    {
-      name: "wazuh",
-      hostname: "wazuh-01",
-      ip: "192.168.56.10",
-      cpus: 2,
-      memory: 4096
-    },
+    # {
+    #   name: "wazuh",
+    #   hostname: "wazuh-01",
+    #   ip: "192.168.56.10",
+    #   cpus: 2,
+    #   memory: 4096
+    # },
     {
       name: "client",
       hostname: "client-01",
@@ -25,6 +25,13 @@ Vagrant.configure("2") do |config|
       name: "caldera",
       hostname: "caldera-01",
       ip: "192.168.56.12",
+      cpus: 2,
+      memory: 4096
+    },
+    {
+      name: "elastic",
+      hostname: "elastic-01",
+      ip: "192.168.56.13",
       cpus: 2,
       memory: 4096
     }

@@ -1,0 +1,48 @@
+---
+# ===========================================================================
+# Elastic Stack (v2 du serveur de détection) — Elasticsearch + Kibana + Fleet
+# ===========================================================================
+
+# Version du stack (épinglée pour un déploiement reproductible)
+elastic_version: "8.19.2"
+
+# Réseau
+elastic_server_ip: "192.168.56.13"
+elasticsearch_http_port: 9200
+kibana_port: 5601
+fleet_server_port: 8220
+
+# URLs internes utilisées par les composants entre eux
+elasticsearch_url: "http://127.0.0.1:{{ elasticsearch_http_port }}"
+# URLs publiques annoncées aux agents (doivent être joignables depuis client-01)
+elasticsearch_public_url: "http://{{ elastic_server_ip }}:{{ elasticsearch_http_port }}"
+kibana_public_url: "http://{{ elastic_server_ip }}:{{ kibana_port }}"
+fleet_server_public_url: "http://{{ elastic_server_ip }}:{{ fleet_server_port }}"
+
+# Dépôt APT officiel Elastic 8.x
+elastic_repo_key_url: "https://artifacts.elastic.co/GPG-KEY-elasticsearch"
+elastic_repo_keyring: "/usr/share/keyrings/elasticsearch-keyring.gpg"
+elastic_repo_file: "/etc/apt/sources.list.d/elastic-8.x.list"
+elastic_repo: >-
+  deb [signed-by=/usr/share/keyrings/elasticsearch-keyring.gpg]
+  https://artifacts.elastic.co/packages/8.x/apt stable main
+
+# ---------------------------------------------------------------------------
+# Secrets — valeurs de LAB par défaut.
+# En production / dépôt partagé : déplacez-les dans inventory/group_vars et
+# chiffrez-les avec Ansible Vault (voir README). Les clés de chiffrement
+# doivent faire au moins 32 caractères.
+# ---------------------------------------------------------------------------
+elastic_password: "LabElastic2026!"
+kibana_system_password: "LabKibana2026!"
+
+kibana_encryption_key_saved_objects: "lab_encrypted_saved_objects_key_change_me_32c"
+kibana_encryption_key_reporting: "lab_reporting_encryption_key_change_me_000_32c"
+kibana_encryption_key_security: "lab_security_encryption_key_change_me_0000_32c"
+
+# Politique Fleet à laquelle les agents (client-01) seront rattachés
+elastic_agent_policy_name: "lab-endpoints"
+elastic_agent_policy_id: "lab-endpoints"
+
+# Marqueur d'initialisation Fleet (bootstrap joué une seule fois)
+elastic_bootstrap_marker: "/var/lib/elasticsearch/.lab-bootstrap-done"
